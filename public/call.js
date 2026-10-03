@@ -1,8 +1,15 @@
-export class PlusCall {
-  constructor({token, callId, wsUrl, iceServers=[], onEvent=()=>{}, onRemote=()=>{}}){this.token=token;this.callId=callId;this.wsUrl=wsUrl;this.iceServers=iceServers;this.onEvent=onEvent;this.onRemote=onRemote;this.ws=null;this.pc=null;this.stream=null;this.screen=null;}
-  async start({video=false,screen=false}={}){this.stream=await navigator.mediaDevices.getUserMedia({audio:true,video});if(screen)this.screen=await navigator.mediaDevices.getDisplayMedia({video:true});const s=this.screen||this.stream;for(const t of s.getTracks())this.pc?.addTrack(t,s);this.connect();}
-  connect(){this.ws=new WebSocket(this.wsUrl);this.ws.onopen=()=>this.ws.send(JSON.stringify({type:'join',call_id:this.callId,token:this.token}));this.ws.onmessage=async e=>{const m=JSON.parse(e.data);this.onEvent(m);};}
-  toggleMic(){if(this.stream)this.stream.getAudioTracks().forEach(t=>t.enabled=!t.enabled);}
-  toggleCamera(){if(this.stream)this.stream.getVideoTracks().forEach(t=>t.enabled=!t.enabled);}
-  async hangup(){this.ws?.send(JSON.stringify({type:'leave',call_id:this.callId,token:this.token}));this.ws?.close();this.pc?.close();this.stream?.getTracks().forEach(t=>t.stop());this.screen?.getTracks().forEach(t=>t.stop());}
+export class PlusCall{
+ constructor({token,callId,wsUrl,iceServers=[],onEvent=()=>{},onRemote=()=>{}}){this.token=token;this.callId=callId;this.wsUrl=wsUrl;this.iceServers=iceServers;this.onEvent=onEvent;this.onRemote=onRemote;this.ws=null;this.pc=null;this.stream=null;this.screen=null;this.peers=new Map();}
+ async start({video=false}={}){this.stream=await navigator.mediaDevices.getUserMedia({audio:true,video});this.connect();}
+ connect(){this.ws=new WebSocket(this.wsUrl);this.ws.onopen=()=>this.ws.send(JSON.stringify({type:'join',call_id:this.callId,token:this.token}));this.ws.onmessage=async e=>{const m=JSON.parse(e.data);if(m.type==='offer')await this.acceptOffer(m);else if(m.type==='answer')await this.acceptAnswer(m);else if(m.type==='ice')await this.addIce(m);this.onEvent(m);};}
+ createPeer(id){if(this.peers.has(id))return this.peers.get(id);const pc=new RTCPeerConnection({iceServers:this.iceServers});for(const t of this.stream?.getTracks()||[])pc.addTrack(t,this.stream);pc.onicecandidate=e=>{if(e.candidate)this.ws?.send(JSON.stringify({type:'ice',call_id:this.callId,to:id,candidate:e.candidate}));};pc.ontrack=e=>this.onRemote(id,e.streams[0]);pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){pc.close();this.peers.delete(id);}};this.peers.set(id,pc);return pc;}
+ async callPeer(id){const pc=this.createPeer(id);const offer=await pc.createOffer();await pc.setLocalDescription(offer);this.ws.send(JSON.stringify({type:'offer',call_id:this.callId,to:id,description:pc.localDescription}));}
+ async acceptOffer(m){const pc=this.createPeer(m.from_user_id);await pc.setRemoteDescription(m.description);const answer=await pc.createAnswer();await pc.setLocalDescription(answer);this.ws.send(JSON.stringify({type:'answer',call_id:this.callId,to:m.from_user_id,description:pc.localDescription}));}
+ async acceptAnswer(m){const pc=this.createPeer(m.from_user_id);await pc.setRemoteDescription(m.description);}
+ async addIce(m){const pc=this.createPeer(m.from_user_id);if(m.candidate)await pc.addIceCandidate(m.candidate);}
+ async shareScreen(){this.screen=await navigator.mediaDevices.getDisplayMedia({video:true});for(const [id,pc] of this.peers){const sender=pc.getSenders().find(s=>s.track?.kind==='video');if(sender)await sender.replaceTrack(this.screen.getVideoTracks()[0]);}this.screen.getVideoTracks()[0].onended=()=>this.stopScreen();}
+ stopScreen(){this.stream?.getVideoTracks()[0]&&this.peers.forEach(pc=>{const sender=pc.getSenders().find(s=>s.track?.kind==='video');if(sender)sender.replaceTrack(this.stream.getVideoTracks()[0]);});this.screen?.getTracks().forEach(t=>t.stop());this.screen=null;}
+ toggleMic(){this.stream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);}
+ toggleCamera(){this.stream?.getVideoTracks().forEach(t=>t.enabled=!t.enabled);}
+ async hangup(){this.ws?.send(JSON.stringify({type:'leave',call_id:this.callId,token:this.token}));this.ws?.close();this.peers.forEach(pc=>pc.close());this.peers.clear();this.stream?.getTracks().forEach(t=>t.stop());this.stopScreen();}
 }
