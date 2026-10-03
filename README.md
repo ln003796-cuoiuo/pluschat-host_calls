@@ -1,5 +1,5 @@
 # PlusChat Calls
 
-Separate calling backend for tell.плюсчат.рф.
+Отдельный backend звонков для `tell.плюсчат.рф`.
 
-WebRTC media, WebSocket signaling, authentication and call history live here independently from pluschat-host.
+Архитектура: WebRTC для медиа, WebSocket для signaling, PHP API для авторизации и истории звонков. Медиа через PHP не проходит.

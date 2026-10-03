@@ -1,0 +1,1 @@
+{"name":"pluschat/calls","require":{"php":">=8.3","cboden/ratchet":"^0.4","react/event-loop":"^1.5","react/socket":"^1.16"},"autoload":{"psr-4":{"PlusChat\\Calls\\":"src/"}}}
